@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<title>Lighting and Shading</title>
+	<script type="text/javascript" src="Common/webgl-utils.js"></script>
+	<script type="text/javascript" src="Common/initShaders.js"></script>
+	<script type="text/javascript" src="Common/MV.js"></script>
+	<script type="text/javascript" src="script.js"></script>
+	<script type="text/javascript" src="Geometry.js"></script>
+	<link rel="stylesheet" type="text/css" href="styles.css">
+
+	<!-- vertex shader -->
+	<script id="vertex-shader" type="x-shader/x-vertex">
+uniform mat4 projectionMatrix;
+    uniform mat4 modelViewMatrix;
+    uniform mat3 normalMatrix;
+
+    uniform vec4 pointLightPos;
+    uniform vec4 pointAmbient;
+    uniform vec4 pointDiffuse;
+    uniform vec4 pointSpecular;
+    uniform bool pointLightOn;
+    uniform bool isDirectional;
+
+    uniform float shininess; 
+    uniform float nonPhotorealisticBands;
+
+    attribute vec4 vPosition;
+    attribute vec3 vNormal;
+
+    varying vec4 fColor;
+    varying vec3 fragNormal;
+    varying vec3 fragPos;
+
+    uniform vec4 materialAmbient;
+    uniform vec4 materialDiffuse;
+    uniform vec4 materialSpecular;
+
+    uniform vec4 spotLightPos;
+    uniform vec4 spotLightDir;
+    uniform float spotLightCutoff;
+    uniform bool spotLightOn;
+
+    void main() {
+        vec3 pos = (modelViewMatrix * vPosition).xyz;
+        vec3 N = normalize(normalMatrix * vNormal);
+        vec4 finalColor = vec4(0.0, 0.0, 0.0, 1.0);
+        
+        if (pointLightOn) {
+            vec3 L;
+            if (isDirectional) {
+                L = normalize(-pointLightPos.xyz);
+            } else {
+                L = normalize(pointLightPos.xyz - pos);
+            }
+            
+            vec3 V = normalize(-pos);
+            vec3 R = reflect(-L, N);
+
+            vec4 ambient = pointAmbient * materialAmbient;
+            
+            float Kd = max(dot(L, N), 0.0);
+            vec4 diffuse = Kd * pointDiffuse * materialDiffuse;
+            
+            // Improved specular calculation using reflection vector
+            float Ks = pow(max(dot(R, V), 0.0), shininess);
+            vec4 specular = Ks * pointSpecular * materialSpecular;
+
+            finalColor += ambient + diffuse + specular;
+        }
+
+        // Spot light calculations (similar improvements)
+        if (spotLightOn) {
+            vec3 L = normalize(spotLightPos.xyz - pos);
+            vec3 V = normalize(-pos);
+            vec3 R = reflect(-L, N);
+            
+            float spotDot = dot(-L, normalize(spotLightDir.xyz));
+            
+            if (spotDot > spotLightCutoff) {
+                float intensity = (spotDot - spotLightCutoff) / (1.0 - spotLightCutoff);
+                
+                vec4 ambient = pointAmbient * materialAmbient;
+                
+                float Kd = max(dot(L, N), 0.0);
+                vec4 diffuse = Kd * pointDiffuse * materialDiffuse;
+                
+                float Ks = pow(max(dot(R, V), 0.0), shininess);
+                vec4 specular = Ks * pointSpecular * materialSpecular;
+                
+                finalColor += intensity * (ambient + diffuse + specular);
+            }
+        }
+
+        // NPR color banding
+        if (nonPhotorealisticBands > 0.0) {
+            finalColor.rgb = floor(finalColor.rgb * nonPhotorealisticBands) / nonPhotorealisticBands;
+        }
+
+        gl_Position = projectionMatrix * modelViewMatrix * vPosition;
+        fColor = finalColor;
+        fColor.a = 1.0;
+    }
+	</script>
+
+	<!-- fragment shader -->
+	<script id="fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform bool isFlatShading;
+        varying vec4 fColor;
+        
+        void main()
+        {
+            if (isFlatShading) {
+                // Use a distinct calculation for flat shading
+                // This will make the difference more noticeable
+                gl_FragColor = vec4(fColor.rgb * 0.7, 1.0);  // Darken the color
+            } else {
+                gl_FragColor = fColor;  // Normal smooth shading
+            }
+        }
+	</script>
+</head>
+
+<body>
+    <div class="main-container">
+        <div class="canvas-and-lower-controls">
+            <div class="canvas">
+                <canvas id="gl-canvas" width="1280" height="720">
+                    Error: your browser doesn't support the HTML5 canvas element
+                </canvas>
+            </div>
+            
+            <div class="lower-controls">
+                <div class="control-group">
+                    <h4 class="section-title">Light Controls</h4>
+                    <div class="param-panel">
+                        <h5>Point Light</h5>
+                        <div class="horizontal-align mg-top-bottom">
+                            <div class="checkText">Toggle Light</div>
+                            <input type="checkbox" id="pointLightToggle" checked>
+                        </div>
+                        <div class="horizontal-align mg-top-bottom">
+                            <div class="checkText">Directional/Positional</div>
+                            <input type="checkbox" id="lightTypeToggle">
+                        </div>
+                        
+                        <div class="mg-top-bottom">
+                            <label>Position:</label><br>
+                            <div class="position-controls">
+                                <div>
+                                    X: <input type="range" id="pointLightX" min="-5" max="5" value="2" step="0.1">
+                                </div>
+                                <div>
+                                    Y: <input type="range" id="pointLightY" min="-5" max="5" value="2" step="0.1">
+                                </div>
+                                <div>
+                                    Z: <input type="range" id="pointLightZ" min="-5" max="5" value="2" step="0.1">
+                                </div>
+                            </div></div>
+                        
+                        <div class="mg-top-bottom">
+                            Ambient Light: <input type="range" id="ambientLight" min="0" max="1" value="0.2" step="0.1"><br>
+                            Diffuse Light: <input type="range" id="diffuseLight" min="0" max="1" value="1.0" step="0.1"><br>
+                            Specular Light: <input type="range" id="specularLight" min="0" max="1" value="1.0" step="0.1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h4 class="section-title">Material Properties</h4>
+                    <div class="param-panel">
+                        <select id="objectSelector">
+                            <option value="cylinder">Cylinder</option>
+                            <option value="cube">Cube</option>
+                            <option value="sphere">Sphere</option>
+                        </select>
+                        
+                        <div class="mg-top-bottom">
+                            Ambient Reflection: <input type="range" id="ambientCoef" min="0" max="1" value="1" step="0.1"><br>
+                            Diffuse Reflection: <input type="range" id="diffuseCoef" min="0" max="1" value="1" step="0.1"><br>
+                            Specular Reflection: <input type="range" id="specularCoef" min="0" max="1" value="1" step="0.1">
+                        </div>
+
+                        <div class="mg-top-bottom">
+                            <label>Shininess:</label><br>
+                            <input type="range" id="shininess" min="1" max="100" value="60">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h4 class="section-title">Spot Light</h4>
+                    <div class="param-panel">
+                        <div class="horizontal-align mg-top-bottom">
+                            <div class="checkText">Toggle Spot Light</div>
+                            <input type="checkbox" id="spotLightToggle" checked>
+                        </div>
+                        
+                        <div class="mg-top-bottom">
+                            <label>Position:</label><br>
+                            X: <input type="range" id="spotLightX" min="-5" max="5" value="0" step="0.1">
+                            Y: <input type="range" id="spotLightY" min="-5" max="5" value="2" step="0.1">
+                            Z: <input type="range" id="spotLightZ" min="-5" max="5" value="0" step="0.1">
+                        </div>
+                        
+                        <div class="mg-top-bottom">
+                            <label>Cutoff Angle:</label><br>
+                            <input type="range" id="spotLightCutoff" min="0" max="90" value="20" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h4 class="section-title">Camera Position</h4>
+                    <div class="param-panel">
+                        X: <input type="range" id="cameraX" min="-10" max="10" value="0" step="0.1">
+                        Y: <input type="range" id="cameraY" min="-10" max="10" value="0" step="0.1">
+                        Z: <input type="range" id="cameraZ" min="-10" max="10" value="5" step="0.1">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel with Object Controls -->
+        <div class="panel">
+            <!-- Cylinder Controls -->
+            <h4 class="section-title">Cylinder Controls</h4>
+            <div class="param-panel">
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate X-Axis</div>
+                    <input class="checkRadio" id="cylinder-x" type="radio" name="checkCylinder" checked>
+                </div>
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate Y-Axis</div>
+                    <input class="checkRadio" id="cylinder-y" type="radio" name="checkCylinder">
+                </div>
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate Z-Axis</div>
+                    <input class="checkRadio" id="cylinder-z" type="radio" name="checkCylinder">
+                </div>
+            </div>
+            <input id="cylinder-btn" class="anim-btn" type="button" value="Start Cylinder Rotate">
+
+            <!-- Cube Controls -->
+            <h4 class="section-title">Cube Controls</h4>
+            <div class="param-panel">
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate X-Axis</div>
+                    <input class="checkRadio" id="cube-x" type="radio" name="checkCube" checked>
+                </div>
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate Y-Axis</div>
+                    <input class="checkRadio" id="cube-y" type="radio" name="checkCube">
+                </div>
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate Z-Axis</div>
+                    <input class="checkRadio" id="cube-z" type="radio" name="checkCube">
+                </div>
+            </div>
+            <input id="cube-btn" class="anim-btn" type="button" value="Start Cube Rotate">
+
+            <!-- Sphere Controls -->
+            <h4 class="section-title">Sphere Controls</h4>
+            <div class="param-panel">
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate X-Axis</div>
+                    <input class="checkRadio" id="sphere-x" type="radio" name="checkSphere" checked>
+                </div>
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate Y-Axis</div>
+                    <input class="checkRadio" id="sphere-y" type="radio" name="checkSphere">
+                </div>
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Rotate Z-Axis</div>
+                    <input class="checkRadio" id="sphere-z" type="radio" name="checkSphere">
+                </div>
+            </div>
+            <input id="sphere-btn" class="anim-btn" type="button" value="Start Sphere Rotate">
+            
+            <div class="param-panel" style="margin-top: 20px;">
+                <h4 class="section-title">Keyboard Controls</h4>
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">Space: Start/Pause/Resume all rotations</div>
+                </div>
+                <div class="horizontal-align mg-top-bottom">
+                    <div class="checkText">R: Refresh page</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
