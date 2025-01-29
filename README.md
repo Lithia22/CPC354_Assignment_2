@@ -1,6 +1,6 @@
   # Lighting and Shading Animation
 
-<a href="FrontPage.png" target="_blank">
+<a href="https://lithia22.github.io/CPC354_Assignment_2/" target="_blank">
   <img src="FrontPage.png" alt="Preview of Lighting and Shading Animation" width="1200px" style="cursor: pointer;" />
 </a>
 
